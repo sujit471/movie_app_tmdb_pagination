@@ -7,33 +7,47 @@ import 'movie_state.dart';
 class MovieBloc extends Bloc<MovieEvent, MovieState> {
   List<MovieModel> allMovies = [];
 
-  MovieBloc() : super(MovieInitial()) {
+  MovieBloc() : super( MovieInitial()) {
     on<FetchMovies>(_onFetchMovies);
-   on<SearchMovies>(_onSearchMovies);
+    on<SearchMovies>(_onSearchMovies);
   }
 
   Future<void> _onFetchMovies(FetchMovies event, Emitter<MovieState> emit) async {
     try {
-      emit(MovieLoading());
-      // Assume MovieService.fetchMovies fetches movies based on the page number
-      final paginatedMovies = await MovieService.fetchMovies(page: event.page);
+      // Use currentPage and totalPages from the state with a default of 1
+      final currentPage = state.currentPage ?? 1;
+      final totalPages = state.totalPages ?? 1;
+
+      if (currentPage > totalPages) return; // Stop if there are no more pages
+
+      emit(MovieLoading(movies: allMovies, currentPage: currentPage, totalPages: totalPages));
+
+      // Fetch movies from the API
+      final paginatedMovies = await MovieService.fetchMovies(page: currentPage);
+      final newTotalPages = paginatedMovies.totalPages; // Update total pages
       allMovies.addAll(paginatedMovies.movies);
-      emit(MovieLoaded(allMovies));
+
+      emit(MovieLoaded(
+        movies: allMovies,
+        currentPage: currentPage + 1, // Increment page for the next fetch
+        totalPages: newTotalPages,
+      ));
     } catch (e) {
-      emit(MovieError('Failed to load movies'));
+      emit(MovieError('Failed to load movies', currentPage: state.currentPage, totalPages: state.totalPages));
     }
   }
 
   void _onSearchMovies(SearchMovies event, Emitter<MovieState> emit) {
-    print(event.query);
     try {
-      emit(MovieLoading());
+      emit(MovieLoading(movies: [], currentPage: state.currentPage, totalPages: state.totalPages));
+
       final filteredMovies = allMovies
           .where((movie) => movie.title.toLowerCase().contains(event.query.toLowerCase()))
           .toList();
-      emit(MovieSearchLoaded(filteredMovies));
+
+      emit(MovieSearchLoaded(movies: filteredMovies, currentPage: state.currentPage, totalPages: state.totalPages));
     } catch (e) {
-      emit(MovieError('Failed to search movies'));
+      emit(MovieError('Failed to search movies', currentPage: state.currentPage, totalPages: state.totalPages));
     }
   }
 }
