@@ -1,12 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:movie_from_api/constant/colors.dart';
 import 'package:movie_from_api/constant/space.dart';
 import 'package:movie_from_api/screens/search_result.dart';
-import 'package:movie_from_api/services/movie_model.dart';
-import 'package:movie_from_api/services/movie_service.dart';
-import 'package:movie_from_api/services/pagination_model.dart';
-
+import 'package:movie_from_api/bloc/movie_bloc.dart';
+import 'package:movie_from_api/bloc/movie_event.dart';
+import 'package:movie_from_api/bloc/movie_state.dart';
+import '../services/movie_model.dart';
 import '../widget/Image.dart';
 import '../widget/movie_list.dart';
 import '../widget/page_indicator.dart';
@@ -20,11 +21,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with  NavigationToPage{
-  late Future<PaginatedMovies> futureMovies;
-  List<MovieModel> _movies = [];
-
-  String _searchQuery = '';
+class _HomePageState extends State<HomePage> with NavigationToPage {
   final PageController _pageController = PageController(viewportFraction: 0.55);
   int _currentPage = 0;
   int _totalPages = 1;
@@ -32,8 +29,7 @@ class _HomePageState extends State<HomePage> with  NavigationToPage{
   @override
   void initState() {
     super.initState();
-    _fetchAllMovies();
-
+    context.read<MovieBloc>().add(FetchMovies());
     _pageController.addListener(() {
       setState(() {
         _currentPage = _pageController.page!.round();
@@ -41,32 +37,8 @@ class _HomePageState extends State<HomePage> with  NavigationToPage{
     });
   }
 
-  Future<void> _fetchAllMovies({int page = 1}) async {
-    futureMovies = MovieService.fetchMovies(page: page);
-    futureMovies.then((paginatedMovies) {
-      setState(() {
-        _movies.addAll(paginatedMovies.movies);
-        _totalPages = paginatedMovies.totalPages;
-        if (page < _totalPages) {
-          _fetchAllMovies(page: page + 1);
-        }
-      });
-    });
-  }
-
-  List<MovieModel> _filterMovies(String query) {
-    if (query.isEmpty) {
-      return [];
-    } else {
-      return _movies
-          .where((movie) =>
-              movie.title.toLowerCase().contains(query.toLowerCase()))
-          .toList();
-    }
-  }
-
-  Widget _buildMoviesList() {
-    final movies = _movies.take(5).toList();
+  Widget _buildMoviesList(List<MovieModel> movies) {
+    final displayedMovies = movies.take(5).toList();
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,15 +47,15 @@ class _HomePageState extends State<HomePage> with  NavigationToPage{
             padding: const EdgeInsets.all(8.0),
             child: Text("Now Showing", style: CustomStyleText.header()),
           ),
-Height(20),
+          Height(20),
           SizedBox(
             height: 305,
             child: PageView.builder(
               controller: _pageController,
-              itemCount: movies.length,
+              itemCount: displayedMovies.length,
               itemBuilder: (context, index) {
                 final isCenter = index == _currentPage;
-                final movie = movies[index];
+                final movie = displayedMovies[index];
                 final scale = isCenter ? 1.0 : 0.8;
                 return TweenAnimationBuilder(
                   duration: const Duration(milliseconds: 500),
@@ -109,7 +81,7 @@ Height(20),
               },
             ),
           ),
-          Indicator(itemCount: movies.length, currentPage: _currentPage),
+          Indicator(itemCount: displayedMovies.length, currentPage: _currentPage),
           Height(20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -117,20 +89,20 @@ Height(20),
               Text('Animation Film', style: CustomStyleText.header()),
               GestureDetector(
                 onTap: () {
-                navigateTo(context, MoviesPage());
+                  navigateTo(context, MoviesPage());
                 },
                 child: Text('See more', style: CustomStyleText.subheader()),
               ),
             ],
           ),
-     Height(30),
+          Height(30),
           SizedBox(
             height: 280,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: 10,
+              itemCount: displayedMovies.length,
               itemBuilder: (context, index) {
-                final movie = _movies[index];
+                final movie = displayedMovies[index];
                 return Padding(
                   padding: const EdgeInsets.all(12.0),
                   child: MoviePoster(movie: movie),
@@ -187,9 +159,9 @@ Height(20),
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => SearchResultsPage(
-                            searchQuery: _searchQuery,
-                            movies: _movies,
+                          builder: (context) => const SearchResultsPage(
+                            searchQuery: '',
+                            movies: [],
                           ),
                         ),
                       );
@@ -204,19 +176,20 @@ Height(20),
                             borderRadius: BorderRadius.circular(30),
                             color: Colors.grey,
                           ),
-                          child:  Padding(
-                            padding: EdgeInsets.all(10.0),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10.0),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.search,color: Colors.white,),
+                                    const Icon(Icons.search, color: Colors.white),
                                     Width(15),
-                                     Text('Search Movies...',style: CustomStyleText.subheader(),),
+                                    Text('Search Movies...',
+                                        style: CustomStyleText.subheader()),
                                   ],
                                 ),
-                                const Icon(Icons.menu,color:Colors.white),
+                                const Icon(Icons.menu, color: Colors.white),
                               ],
                             ),
                           ),
@@ -229,9 +202,20 @@ Height(20),
             ),
           ),
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: _buildMoviesList(),
+        body: BlocBuilder<MovieBloc, MovieState>(
+          builder: (context, state) {
+            if (state is MovieLoading) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (state is MovieLoaded) {
+              return Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: _buildMoviesList(state.movies),
+              );
+            } else if (state is MovieError) {
+              return Center(child: Text(state.message, style: CustomStyleText.header()));
+            }
+            return const Center(child: Text('No Movies Found'));
+          },
         ),
       ),
     );

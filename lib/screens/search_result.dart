@@ -1,8 +1,15 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
+import 'package:movie_from_api/bloc/movie_bloc.dart';
 import 'package:movie_from_api/screens/details.dart';
 import 'package:movie_from_api/services/movie_model.dart';
 import 'package:movie_from_api/constant/colors.dart';
 import '../widget/push_to_next.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:movie_from_api/bloc/movie_bloc.dart';
+import 'package:movie_from_api/bloc/movie_event.dart';
+import 'package:movie_from_api/bloc/movie_state.dart';
 
 class SearchResultsPage extends StatefulWidget {
   final String searchQuery;
@@ -22,6 +29,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> with NavigationTo
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.searchQuery);
+    context.read<MovieBloc>().add(SearchMovies(widget.searchQuery));
     _filteredMovies = widget.movies
         .where((movie) => movie.title.toLowerCase().contains(widget.searchQuery.toLowerCase()))
         .toList();
@@ -34,17 +42,17 @@ class _SearchResultsPageState extends State<SearchResultsPage> with NavigationTo
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Scaffold(
         backgroundColor: primaryColor,
         appBar: PreferredSize(
-          
-          preferredSize:Size.fromHeight(120),
+          preferredSize: Size.fromHeight(120),
           child: Padding(
             padding: const EdgeInsets.only(top: 40),
             child: AppBar(
-            iconTheme: const IconThemeData(color: Colors.white),
+              iconTheme: const IconThemeData(color: Colors.white),
               leadingWidth: 25,
               title: SizedBox(
                 width: 600,
@@ -56,10 +64,10 @@ class _SearchResultsPageState extends State<SearchResultsPage> with NavigationTo
                       style: const TextStyle(color: Colors.white),
                       controller: _controller,
                       decoration: InputDecoration(
-                     counterStyle: const TextStyle(color: Colors.white),
+                        counterStyle: const TextStyle(color: Colors.white),
                         hintStyle: const TextStyle(color: Colors.white),
-                        prefixIcon: const Icon(Icons.search,color: Colors.white,),
-                        suffixIcon: const Icon(Icons.menu,color: Colors.white,),
+                        prefixIcon: const Icon(Icons.search, color: Colors.white),
+                        suffixIcon: const Icon(Icons.menu, color: Colors.white),
                         hintText: 'Search Movies',
                         filled: true,
                         fillColor: Colors.grey,
@@ -69,11 +77,9 @@ class _SearchResultsPageState extends State<SearchResultsPage> with NavigationTo
                         ),
                       ),
                       onChanged: (query) {
-                        setState(() {
-                          _filteredMovies = widget.movies
-                              .where((movie) => movie.title.toLowerCase().contains(query.toLowerCase()))
-                              .toList();
-                        });
+                        if (query.isNotEmpty) {
+                          context.read<MovieBloc>().add(SearchMovies(query));
+                        }
                       },
                     ),
                   ),
@@ -83,32 +89,72 @@ class _SearchResultsPageState extends State<SearchResultsPage> with NavigationTo
             ),
           ),
         ),
-        body: _controller.text.isEmpty
-            ? Center(child: Text('Type to search for movies ...',style: CustomStyleText.header(),))
-            : _filteredMovies.isEmpty
-            ? Center(child: Text('No movies found',style: CustomStyleText.subheader(),))
-            : ListView.builder(
-          itemCount: _filteredMovies.length,
-          itemBuilder: (context, index) {
-            final movie = _filteredMovies[index];
-            return ListTile(
-              title: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(movie.title,style: CustomStyleText.subheader(),),
-                    Divider(thickness: 1,),
-                  ],
+        body: BlocBuilder<MovieBloc, MovieState>(
+          builder: (context, state) {
+            log(state.toString());
+            // Check if the search field is empty
+            if (_controller.text.isEmpty) {
+              return Center(
+                child: Text(
+                  'Type to search for movies ...',
+                  style: CustomStyleText.header(),
                 ),
-              ),
-              onTap: () {
-                navigateTo(context, MovieDetailPage(movie: movie));
-              },
-            );
+              );
+            }
+
+            // Display different states
+            if (state is MovieLoading) {
+              return Center(child: CircularProgressIndicator());
+            } else if (state is MovieSearchLoaded) {
+              final _filteredMovies = state.movies;
+              if (_filteredMovies.isEmpty) {
+                return Center(
+                  child: Text(
+                    'No movies found',
+                    style: CustomStyleText.subheader(),
+                  ),
+                );
+              }
+              return ListView.builder(
+                itemCount: _filteredMovies.length,
+                itemBuilder: (context, index) {
+                  final movie = _filteredMovies[index];
+                  return ListTile(
+                    title: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(movie.title, style: CustomStyleText.subheader()),
+                          Divider(thickness: 1),
+                        ],
+                      ),
+                    ),
+                    onTap: () {
+                      navigateTo(context, MovieDetailPage(movie: movie));
+                    },
+                  );
+                },
+              );
+            } else if (state is MovieError) {
+              return Center(
+                child: Text(
+                  'No movies found',
+                  style: CustomStyleText.subheader(),
+                ),
+              );
+            } else {
+              return Center(
+                child: Text(
+                  'Type to search for movies ...',
+                  style: CustomStyleText.header(),
+                ),
+              );
+            }
           },
         ),
       ),
     );
   }
+
 }
